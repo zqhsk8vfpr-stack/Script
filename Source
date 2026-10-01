@@ -1,0 +1,438 @@
+if setfpscap then setfpscap(500) end
+
+(function()
+
+local cloneref = cloneref or function(obj) return obj end
+
+local Players           = cloneref(game:GetService("Players"))
+local RunService        = cloneref(game:GetService("RunService"))
+local UserInputService  = cloneref(game:GetService("UserInputService"))
+local Workspace         = cloneref(game:GetService("Workspace"))
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+local StarterGui        = cloneref(game:GetService("StarterGui"))
+local TeleportService   = cloneref(game:GetService("TeleportService"))
+local Stats             = cloneref(game:GetService("Stats"))
+local TweenService      = cloneref(game:GetService("TweenService"))
+local LocalPlayer       = Players.LocalPlayer
+local Camera            = workspace.CurrentCamera
+
+local PATHS = {
+    ["General.Enabled"]                                  = "Enabled",
+
+    ["Aim Assist.Bind.AimbotKey"]                        = "AimbotKey",
+    ["Aim Assist.Enabled"]                               = "Prediction",
+    ["Aim Assist.SmoothnessX"]                           = "SmoothnessX",
+    ["Aim Assist.SmoothnessY"]                           = "SmoothnessY",
+    ["Aim Assist.Mode"]                                  = "Activation",
+    ["Aim Assist.TargetPriority"]                        = "TargetPriority",
+    ["Aim Assist.Hit Part"]                              = "HitpartSelection",
+    ["Aim Assist.JumpOffset"]                            = "JumpOffset",
+    ["Aim Assist.FallOffset"]                            = "FallOffset",
+    ["Aim Assist.Anti Curve"]                            = "AntiCurve",
+    ["Aim Assist.Easing.Style"]                          = "EasingStyle",
+    ["Aim Assist.Easing.Direction"]                      = "EasingDirection",
+    ["Aim Assist.Target Outline.Enabled"]                = "combat_target_outline",
+    ["Aim Assist.Target Outline.Mode"]                   = "target_outline_mode",
+    ["Aim Assist.Target Outline.Scale"]                  = "target_outline_scale",
+    ["Aim Assist.Target Outline.Max Distance"]           = "target_outline_max_dist",
+    ["Aim Assist.GunConfigEnabled"]                      = "GunConfigEnabled",
+    ["Aim Assist.GunConfigs"]                            = "GunConfigs",
+    ["Aim Assist.Prediction.Enabled"]                    = "PredictionEnabled",
+    ["Aim Assist.Prediction.AutoPrediction"]             = "AutoPrediction",
+    ["Aim Assist.Prediction.Mode"]                       = "AutoPredictionMode",
+    ["Aim Assist.Prediction.X"]                          = "PredictionX",
+    ["Aim Assist.Prediction.Y"]                          = "PredictionY",
+    ["Aim Assist.Prediction.Z"]                          = "PredictionZ",
+    ["Aim Assist.Prediction.Advanced.ABAlpha"]           = "ABAlpha",
+    ["Aim Assist.Prediction.Advanced.ABBeta"]            = "ABBeta",
+    ["Aim Assist.Prediction.Advanced.AdvancedAutoTime"]  = "AdvancedAutoTime",
+    ["Aim Assist.Prediction.Advanced.AdvancedTimeAhead"] = "AdvancedTimeAhead",
+    ["Aim Assist.Prediction.Advanced.BulletSpeed"]       = "BulletSpeed",
+    ["Aim Assist.Checks.Visible"]                        = "AimbotWallCheck",
+    ["Aim Assist.Checks.Knocked"]                        = "AimbotKnockCheck",
+    ["Aim Assist.Checks.Forcefield"]                     = "AimbotForcefieldCheck",
+    ["Aim Assist.Checks.Friend"]                         = "AimbotFriendCheck",
+
+    ["Silent Aim.Bind.SilentAimKey"]                     = "SilentAimKey",
+    ["Silent Aim.Enabled"]                               = "SilentAim",
+    ["Silent Aim.Mode"]                                  = "SilentAimMethod",
+    ["Silent Aim.Hit Chance"]                            = "SilentAimHitChance",
+    ["Silent Aim.Wall Check"]                            = "SilentAimWallCheck",
+    ["Silent Aim.Knock Check"]                           = "SilentAimKnockCheck",
+    ["Silent Aim.Forcefield Check"]                      = "SilentAimForcefieldCheck",
+    ["Silent Aim.Friend Check"]                          = "SilentAimFriendCheck",
+    ["Silent Aim.Anti Curve"]                            = "SilentAimAntiCurve",
+    ["Silent Aim.Anti Ground"]                           = "SilentAimAntiGround",
+    ["Silent Aim.Prediction.Enabled"]                    = "SilentAimPrediction",
+    ["Silent Aim.Prediction.AutoPrediction"]             = "SilentAimAutoPrediction",
+    ["Silent Aim.Prediction.Mode"]                       = "SilentAimAutoPredictionMode",
+    ["Silent Aim.Prediction.X"]                          = "SilentAimPredX",
+    ["Silent Aim.Prediction.Y"]                          = "SilentAimPredY",
+    ["Silent Aim.Prediction.Z"]                          = "SilentAimPredZ",
+
+    ["Trigger Bot.Bind.TriggerBotKey"]                   = "AutoShootKey",
+    ["Trigger Bot.Enabled"]                              = "AutoShoot",
+    ["Trigger Bot.Delay"]                                = "AutoShootDelay",
+    ["Trigger Bot.Hit Chance"]                           = "AutoShootHitChance",
+    ["Trigger Bot.Auto Air"]                             = "AutoAir",
+    ["Trigger Bot.Forcefield Check"]                     = "AutoShootForcefieldCheck",
+
+    ["Auto Reload.Enabled"]                              = "AutoReload",
+    ["Prefire.Enabled"]                                  = "Prefire",
+    ["Auto Eat.Enabled"]                                 = "AutoEat",
+    ["Auto Eat.Threshold"]                               = "AutoEatThreshold",
+
+    ["Auto Buy.Enabled"]                                 = "AutoBuy",
+    ["Auto Buy.Guns"]                                    = "AutoBuyGun",
+    ["Auto Buy.Food"]                                    = "AutoBuyFood",
+    ["Auto Buy.Armor"]                                   = "AutoBuyArmor",
+    ["Auto Buy.Proximity"]                               = "BuyProximity",
+    ["Auto Buy.Cooldown"]                                = "BuyCooldown",
+    ["Auto Buy.Selected Guns"]                           = "SelectedGun",
+    ["Auto Buy.Selected Foods"]                          = "AutoBuyFoodList",
+
+    ["ESP.Bind.Espkey"]                                  = "ESPKey",
+    ["ESP.Enabled"]                                      = "EnemyESP",
+    ["ESP.Names"]                                        = "NameESP",
+    ["ESP.Distance"]                                     = "DistanceESP",
+    ["ESP.Boxes"]                                        = "BoxESP",
+
+    ["Anti Staff.Enabled"]                               = "AntiModEnabled",
+    ["Anti Staff.Action"]                                = "ModAction",
+    ["Anti Staff.Check On Load"]                         = "CheckModsOnLoad",
+    ["Anti Staff.Group Check"]                           = "GroupCheck",
+
+    ["Resolver.Enabled"]                                 = "Resolver",
+    ["Resolver.Auto"]                                    = "AutoResolver",
+}
+
+local NO_RECURSE = { GunConfigs = true, ["Selected Guns"] = true, ["Selected Foods"] = true }
+
+local function TapConfig(tbl, prefix)
+    for key, value in pairs(tbl) do
+        local path = prefix and (prefix .. "." .. key) or key
+        if type(value) == "table" and not NO_RECURSE[key] then
+            TapConfig(value, path)
+        else
+            local flagName = PATHS[path]
+            if flagName then
+                getgenv()[flagName] = value
+            end
+        end
+    end
+end
+
+TapConfig(Shared.Astra, nil)
+
+local KEYCODE_LOOKUP = {}
+for _, kc in ipairs(Enum.KeyCode:GetEnumItems()) do
+    KEYCODE_LOOKUP[kc.Name:upper()] = kc
+end
+
+local function toKeyCode(s)
+    if typeof(s) == "EnumItem" then return s end
+    if type(s) == "number" then return Enum.KeyCode[s] or Enum.KeyCode.E end
+    return KEYCODE_LOOKUP[tostring(s):upper()] or Enum.KeyCode.E
+end
+
+for _, key in ipairs({ "AimbotKey", "SilentAimKey", "ESPKey", "AutoShootKey" }) do
+    if type(getgenv()[key]) == "string" then
+        getgenv()[key] = toKeyCode(getgenv()[key])
+    end
+end
+
+local EASING_STYLE_MAP = {
+    Linear = Enum.EasingStyle.Linear, Sine = Enum.EasingStyle.Sine,
+    Back = Enum.EasingStyle.Back, Quad = Enum.EasingStyle.Quad,
+    Quart = Enum.EasingStyle.Quart, Quint = Enum.EasingStyle.Quint,
+    Bounce = Enum.EasingStyle.Bounce, Elastic = Enum.EasingStyle.Elastic,
+    Exponential = Enum.EasingStyle.Exponential,
+    Circular = Enum.EasingStyle.Circular, Cubic = Enum.EasingStyle.Cubic,
+}
+
+local EASING_DIR_MAP = {
+    In = Enum.EasingDirection.In,
+    Out = Enum.EasingDirection.Out,
+    InOut = Enum.EasingDirection.InOut,
+}
+
+local function getFlag(name, default)
+    local v = getgenv()[name]
+    if v ~= nil then return v end
+    return default
+end
+
+local easingStyle = EASING_STYLE_MAP[getFlag("EasingStyle", "Circular")] or Enum.EasingStyle.Circular
+local easingDir   = EASING_DIR_MAP[getFlag("EasingDirection", "Out")] or Enum.EasingDirection.Out
+
+local TWEEN_INFO_FAST   = TweenInfo.new(0.15, easingStyle, easingDir, 0, false, 0)
+local TWEEN_INFO_SMOOTH = TweenInfo.new(0.35, easingStyle, easingDir, 0, false, 0)
+
+local function isSilentAimActive()
+    if not getFlag("SilentAim", false) then return false end
+    local kc = getFlag("SilentAimKey")
+    if typeof(kc) == "EnumItem" then
+        return UserInputService:IsKeyDown(kc)
+    end
+    return true
+end
+
+local playerPriority  = {}
+local playerlistActive = false
+
+local _bodyPartsCache     = {}
+local _bodyPartsCacheTime = {}
+local _lastVisiblePart    = {}
+local _lastVisibleScan    = {}
+local _friendCache        = {}
+local _friendCacheTime    = {}
+local resolverState       = {}
+
+local _weaponHitCache   = setmetatable({}, {__mode = "k"})
+local hookedTools       = setmetatable({}, {__mode = "k"})
+local _knockCache       = {}
+local _knockCacheTime   = {}
+local _aimPartCache     = {}
+local _aimPartCacheTime = {}
+local _visCache         = {}
+local _visCacheTime     = {}
+local _lastResolvedVel  = setmetatable({}, {__mode = "k"})
+local _advancedTrackers = setmetatable({}, {__mode = "k"})
+
+local VIS_SCAN_INTERVAL  = 0.05
+local FRIEND_CACHE_TTL   = 10
+local KNOCK_CACHE_TTL    = 0.2
+local AIM_PART_CACHE_TTL = 0.03
+local VIS_CACHE_TTL      = 0.03
+
+local aimbotToggleState  = false
+local lastActivationMode = nil
+
+local mouseButtons = {
+    [Enum.UserInputType.MouseButton1] = false,
+    [Enum.UserInputType.MouseButton2] = false,
+}
+
+local _cachedSmoothX = 0.25
+local _cachedSmoothY = 0.25
+local _espMasterOn   = false
+local _espNameOn     = false
+local _espDistOn     = false
+local _espBoxOn      = false
+
+local TARGET_PRIORITY_MAP = {
+    closest = "closest", closesttocrosshair = "closesttocrosshair",
+    crosshair = "closesttocrosshair", lookdirection = "lookdirection",
+    enemylookdirection = "lookdirection", enemylookdir = "lookdirection",
+    lookdir = "lookdirection", lowesthealth = "lowesthealth",
+    lowesthp = "lowesthealth", lowest = "lowesthealth",
+    highesthealth = "highesthealth", highesthp = "highesthealth",
+    highest = "highesthealth", farthest = "farthest",
+    furthest = "farthest", nearest = "closest",
+    random = "random", manual = "manual",
+}
+
+local function parseTargetPriority()
+    local raw = tostring(getFlag("TargetPriority", "Closest"))
+    local key = raw:lower():gsub("[%s_%-]", "")
+    return TARGET_PRIORITY_MAP[key] or "closest"
+end
+
+local HITPART_MAP = {
+    ["Head"]             = Enum.BodyPartR15.Head,
+    ["UpperTorso"]       = Enum.BodyPartR15.UpperTorso,
+    ["LowerTorso"]       = Enum.BodyPartR15.LowerTorso,
+    ["LeftFoot"]         = Enum.BodyPartR15.LeftFoot,
+    ["LeftLowerLeg"]     = Enum.BodyPartR15.LeftLowerLeg,
+    ["LeftUpperLeg"]     = Enum.BodyPartR15.LeftUpperLeg,
+    ["RightFoot"]        = Enum.BodyPartR15.RightFoot,
+    ["RightLowerLeg"]    = Enum.BodyPartR15.RightLowerLeg,
+    ["RightUpperLeg"]    = Enum.BodyPartR15.RightUpperLeg,
+    ["LeftHand"]         = Enum.BodyPartR15.LeftHand,
+    ["LeftLowerArm"]     = Enum.BodyPartR15.LeftLowerArm,
+    ["LeftUpperArm"]     = Enum.BodyPartR15.LeftUpperArm,
+    ["RightHand"]        = Enum.BodyPartR15.RightHand,
+    ["RightLowerArm"]    = Enum.BodyPartR15.RightLowerArm,
+    ["RightUpperArm"]    = Enum.BodyPartR15.RightUpperArm,
+    ["HumanoidRootPart"] = Enum.BodyPartR15.RootPart,
+}
+
+local function tween(instance, info, properties)
+    if not instance or not instance.Parent then return nil end
+    local t
+    local ok = pcall(function()
+        t = TweenService:Create(instance, info, properties)
+    end)
+    if ok and t then pcall(function() t:Play() end) end
+    return t
+end
+
+local COLOR_ENEMY   = Color3.fromRGB(255, 50, 50)
+local COLOR_FRIEND  = Color3.fromRGB(60, 220, 100)
+local COLOR_NEUTRAL = Color3.fromRGB(255, 255, 255)
+
+local function getTargetColor(userId)
+    local tag = playerPriority[userId]
+    if tag == "Enemy" then return COLOR_ENEMY end
+    if tag == "Friend" then return COLOR_FRIEND end
+    return COLOR_NEUTRAL
+end
+
+local function isGamepadInput(t)
+    return t == Enum.UserInputType.Gamepad1 or t == Enum.UserInputType.Gamepad2
+        or t == Enum.UserInputType.Gamepad3 or t == Enum.UserInputType.Gamepad4
+        or t == Enum.UserInputType.Gamepad5 or t == Enum.UserInputType.Gamepad6
+        or t == Enum.UserInputType.Gamepad7 or t == Enum.UserInputType.Gamepad8
+end
+
+local function isKeyboardKeyCode(key)
+    if typeof(key) ~= "EnumItem" then return false end
+    local name = key.Name or ""
+    if name:find("^Button") or name:find("^DPad") or name:find("^Thumbstick") then
+        return false
+    end
+    return true
+end
+
+local function getKeyCode(name)
+    if typeof(name) == "EnumItem" then return name end
+    if type(name) == "number" then return Enum.KeyCode[name] or Enum.KeyCode.E end
+    return KEYCODE_LOOKUP[tostring(name):upper()] or Enum.KeyCode.E
+end
+
+local ALL_ITEMS = {
+    Gun   = {"[USP]","[Shotgun]","[Tactical Shotgun]","[Silencer]"},
+    Food  = {"[Burger]","[Pizza]","[Chicken]","[Popcorn]","[Donut]","[Taco]","[Super Pizza] - 5 Stomps","[Sauce]"},
+    Armor = {"[Medium Armor]","[High-Medium Armor]","[Super Armor] - 5 Stomps"}
+}
+
+local NON_WEAPON_NAMES = {
+    "Burger", "Pizza", "Chicken", "Popcorn", "Donut", "Taco",
+    "Super Pizza", "Sauce", "Katana", "Spray"
+}
+
+local _weaponClassCache = setmetatable({}, {__mode = "k"})
+local function isWeapon(tool)
+    if not tool or not tool:IsA("Tool") then return false end
+    local cached = _weaponClassCache[tool]
+    if cached ~= nil then return cached end
+    local name = tool.Name
+    local raw = name:match("%[(.-)%]") or name
+    raw = raw:gsub("^%s+", ""):gsub("%s+$", "")
+    local result = true
+    for _, non in ipairs(NON_WEAPON_NAMES) do
+        if raw:lower() == non:lower() then result = false; break end
+    end
+    _weaponClassCache[tool] = result
+    return result
+end
+
+local esp_tags = {}
+
+local function resolveGuiParent()
+    local parent
+    pcall(function() parent = gethui() end)
+    if not parent then pcall(function() parent = game:GetService("CoreGui") end) end
+    if not parent then pcall(function() parent = LocalPlayer:WaitForChild("PlayerGui", 5) end) end
+    return parent
+end
+
+local function createESP(plr)
+    if esp_tags[plr] then return end
+
+    local nameGui = Instance.new("BillboardGui")
+    nameGui.Name = "OverheadNameTag"
+    nameGui.Size = UDim2.fromScale(3, 0.8)
+    nameGui.StudsOffset = Vector3.new(0, -3, 0)
+    nameGui.AlwaysOnTop = true
+    nameGui.LightInfluence = 0
+    nameGui.MaxDistance = 500
+    nameGui.Enabled = false
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Name = "NameLabel"
+    nameLabel.Size = UDim2.fromScale(1, 1)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.BorderSizePixel = 0
+    nameLabel.Text = plr.DisplayName
+    nameLabel.TextColor3 = COLOR_NEUTRAL
+    nameLabel.TextStrokeTransparency = 1
+    nameLabel.TextTransparency = 1
+    nameLabel.TextSize = 7
+    nameLabel.Font = Enum.Font.GothamBlack
+    nameLabel.Parent = nameGui
+
+    local nameStroke = Instance.new("UIStroke")
+    nameStroke.Color = Color3.fromRGB(0, 0, 0)
+    nameStroke.Thickness = 1
+    nameStroke.LineJoinMode = Enum.LineJoinMode.Round
+    nameStroke.Parent = nameLabel
+
+    local distGui = Instance.new("BillboardGui")
+    distGui.Name = "OverheadDistanceTag"
+    distGui.Size = UDim2.fromScale(2, 0.8)
+    distGui.StudsOffset = Vector3.new(0, -3, 0)
+    distGui.AlwaysOnTop = true
+    distGui.LightInfluence = 0
+    distGui.MaxDistance = 500
+    distGui.Enabled = false
+
+    local distLabel = Instance.new("TextLabel")
+    distLabel.Name = "DistanceLabel"
+    distLabel.Size = UDim2.fromScale(1, 1)
+    distLabel.BackgroundTransparency = 1
+    distLabel.BorderSizePixel = 0
+    distLabel.Text = ""
+    distLabel.TextColor3 = COLOR_NEUTRAL
+    distLabel.TextStrokeTransparency = 1
+    distLabel.TextTransparency = 1
+    distLabel.TextSize = 7
+    distLabel.Font = Enum.Font.GothamBlack
+    distLabel.Parent = distGui
+
+    local distStroke = Instance.new("UIStroke")
+    distStroke.Color = Color3.fromRGB(0, 0, 0)
+    distStroke.Thickness = 1
+    distStroke.LineJoinMode = Enum.LineJoinMode.Round
+    distStroke.Parent = distLabel
+
+    local boxGui = Instance.new("ScreenGui")
+    boxGui.Name = "BoxESP_" .. plr.Name
+    local parentGui = resolveGuiParent()
+    if parentGui then pcall(function() boxGui.Parent = parentGui end) end
+    boxGui.ResetOnSpawn = false
+
+    local boxFrame = Instance.new("Frame")
+    boxFrame.Name = "Box"
+    boxFrame.BackgroundTransparency = 1
+    boxFrame.BorderSizePixel = 0
+    boxFrame.Visible = false
+    boxFrame.Parent = boxGui
+
+    local boxStroke = Instance.new("UIStroke")
+    boxStroke.Color = COLOR_NEUTRAL
+    boxStroke.Thickness = 1
+    boxStroke.Transparency = 1
+    boxStroke.Parent = boxFrame
+
+    esp_tags[plr] = {
+        NameGui = nameGui, NameLabel = nameLabel,
+        DistGui = distGui, DistLabel = distLabel,
+        BoxGui = boxGui, BoxFrame = boxFrame, BoxStroke = boxStroke,
+        lastColorState = "Neutral",
+        lastMasterOn = false, lastNameOn = false,
+        lastDistOn = false, lastBoxOn = false,
+    }
+end
+
+local function animateMasterVisibility(tags, on)
+    tags.NameGui.Enabled = true
+    tags.DistGui.Enabled = true
+    tags.BoxFrame.Visible = true
+    local t = on and 0 or 1
+    tween(tags.NameLabel, TWEEN_INFO_FAST, { TextTransparency = t })
+    tween(tags.DistLabel, TWEEN_INFO_FAST, { TextTransparency = t })
+    tween(tags.BoxStroke, TWEEN_INFO_FAST, { Transparency = t })
+end
+
+local function animate
