@@ -106,10 +106,8 @@ local PATHS = {
     ["Resolver.Auto"]                                    = "AutoResolver",
 }
 
--- NO_RECURSE - tables that hold data, not sub-config
 local NO_RECURSE = { GunConfigs = true, ["Selected Guns"] = true, ["Selected Foods"] = true }
 
--- TapConfig - flatten Shared.Astra into getgenv() flags
 local function TapConfig(tbl, prefix)
     for key, value in pairs(tbl) do
         local path = prefix and (prefix .. "." .. key) or key
@@ -164,7 +162,6 @@ local EASING_DIR_MAP = {
     InOut = Enum.EasingDirection.InOut,
 }
 
--- getFlag - read a config flag from getgenv()
 local function getFlag(name, default)
     local v = getgenv()[name]
     if v ~= nil then return v end
@@ -177,11 +174,32 @@ local easingDir   = EASING_DIR_MAP[getFlag("EasingDirection", "Out")] or Enum.Ea
 local TWEEN_INFO_FAST   = TweenInfo.new(0.15, easingStyle, easingDir, 0, false, 0)
 local TWEEN_INFO_SMOOTH = TweenInfo.new(0.35, easingStyle, easingDir, 0, false, 0)
 
+-- gamepad helpers
+local function isGamepadButtonEnum(key)
+    if typeof(key) ~= "EnumItem" then return false end
+    local name = key.Name or ""
+    return name:find("^Button") ~= nil
+end
+
+local function isGamepadButtonDown(buttonEnum)
+    local pads = UserInputService:GetConnectedGamepads()
+    for _, pad in ipairs(pads) do
+        local ok, state = pcall(function() return pad:GetButtonState(buttonEnum) end)
+        if ok and state == Enum.UserInputState.Begin then
+            return true
+        end
+    end
+    return false
+end
+
 -- isSilentAimActive - silent aim is only active while its bind is held
 local function isSilentAimActive()
     if not getFlag("SilentAim", false) then return false end
     local kc = getFlag("SilentAimKey")
     if typeof(kc) == "EnumItem" then
+        if isGamepadButtonEnum(kc) then
+            return isGamepadButtonDown(kc)
+        end
         return UserInputService:IsKeyDown(kc)
     end
     return true
@@ -986,6 +1004,9 @@ local function isAimbotKeyPhysicallyDown()
     if mouseButtons[_cachedAimbotKeyEnum] ~= nil then
         return mouseButtons[_cachedAimbotKeyEnum]
     end
+    if isGamepadButtonEnum(_cachedAimbotKeyEnum) then
+        return isGamepadButtonDown(_cachedAimbotKeyEnum)
+    end
     return UserInputService:IsKeyDown(_cachedAimbotKeyEnum)
 end
 
@@ -1305,15 +1326,16 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     if not getFlag("Enabled", true) then return end
 
     if isGamepadInput(input.UserInputType) then
-        if input.KeyCode == Enum.KeyCode.DPadDown then
-            if getFlag("Activation", "Hold") == "Toggle" then
-                if aimbotToggleState then
-                    aimbotToggleState = false
-                    clearSticky()
-                else
-                    pickTargetUnderCrosshair()
-                    if currentTarget then aimbotToggleState = true end
-                end
+        local aimKey = getFlag("AimbotKey")
+        local isToggle = getFlag("Activation", "Hold") == "Toggle"
+
+        if input.KeyCode == aimKey and isToggle then
+            if aimbotToggleState then
+                aimbotToggleState = false
+                clearSticky()
+            else
+                pickTargetUnderCrosshair()
+                if currentTarget then aimbotToggleState = true end
             end
         end
         return
@@ -1484,7 +1506,7 @@ local function aimbotStep(camCF, camPos, camLook, dt)
 
         local rawKey = getFlag("AimbotKey")
         local resolved = rawKey and getKeyCode(rawKey) or nil
-        if resolved and (isKeyboardKeyCode(resolved) or mouseButtons[resolved] ~= nil) then
+        if resolved and (isKeyboardKeyCode(resolved) or mouseButtons[resolved] ~= nil or isGamepadButtonEnum(resolved)) then
             _cachedAimbotKeyEnum = resolved
         else
             _cachedAimbotKeyEnum = nil
@@ -1651,6 +1673,17 @@ local function autoShootStep()
     local rawName = tool.Name:match("%[(.-)%]") or tool.Name
     rawName = rawName:gsub("^%s+", ""):gsub("%s+$", "")
     if rawName:lower() ~= "usp" then return end
+
+    local triggerKey = getFlag("AutoShootKey")
+    if triggerKey then
+        local held = false
+        if isGamepadButtonEnum(triggerKey) then
+            held = isGamepadButtonDown(triggerKey)
+        elseif typeof(triggerKey) == "EnumItem" then
+            held = UserInputService:IsKeyDown(triggerKey)
+        end
+        if not held then return end
+    end
 
     local hitChance = getFlag("AutoShootHitChance", 100)
     local weaponHit = getWeaponHitChance(tool)
