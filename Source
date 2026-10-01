@@ -1,5 +1,3 @@
-if setfpscap then setfpscap(500) end
-
 (function()
 
 local cloneref = cloneref or function(obj) return obj end
@@ -16,6 +14,7 @@ local TweenService      = cloneref(game:GetService("TweenService"))
 local LocalPlayer       = Players.LocalPlayer
 local Camera            = workspace.CurrentCamera
 
+-- PATHS - maps nested config paths to flat flag names
 local PATHS = {
     ["General.Enabled"]                                  = "Enabled",
 
@@ -96,6 +95,7 @@ local PATHS = {
     ["ESP.Names"]                                        = "NameESP",
     ["ESP.Distance"]                                     = "DistanceESP",
     ["ESP.Boxes"]                                        = "BoxESP",
+    ["ESP.Targets"]                                      = "Targets",
 
     ["Anti Staff.Enabled"]                               = "AntiModEnabled",
     ["Anti Staff.Action"]                                = "ModAction",
@@ -106,8 +106,10 @@ local PATHS = {
     ["Resolver.Auto"]                                    = "AutoResolver",
 }
 
+-- NO_RECURSE - tables that hold data, not sub-config
 local NO_RECURSE = { GunConfigs = true, ["Selected Guns"] = true, ["Selected Foods"] = true }
 
+-- TapConfig - flatten Shared.Astra into getgenv() flags
 local function TapConfig(tbl, prefix)
     for key, value in pairs(tbl) do
         local path = prefix and (prefix .. "." .. key) or key
@@ -122,8 +124,13 @@ local function TapConfig(tbl, prefix)
     end
 end
 
-TapConfig(Shared.Astra, nil)
+if type(Shared) == "table" and type(Shared.Astra) == "table" then
+    TapConfig(Shared.Astra, nil)
+else
+    warn("[Astra] Shared.Astra not found - using internal defaults")
+end
 
+-- keycode lookup
 local KEYCODE_LOOKUP = {}
 for _, kc in ipairs(Enum.KeyCode:GetEnumItems()) do
     KEYCODE_LOOKUP[kc.Name:upper()] = kc
@@ -141,6 +148,7 @@ for _, key in ipairs({ "AimbotKey", "SilentAimKey", "ESPKey", "AutoShootKey" }) 
     end
 end
 
+-- easing maps
 local EASING_STYLE_MAP = {
     Linear = Enum.EasingStyle.Linear, Sine = Enum.EasingStyle.Sine,
     Back = Enum.EasingStyle.Back, Quad = Enum.EasingStyle.Quad,
@@ -156,6 +164,7 @@ local EASING_DIR_MAP = {
     InOut = Enum.EasingDirection.InOut,
 }
 
+-- getFlag - read a config flag from getgenv()
 local function getFlag(name, default)
     local v = getgenv()[name]
     if v ~= nil then return v end
@@ -168,6 +177,7 @@ local easingDir   = EASING_DIR_MAP[getFlag("EasingDirection", "Out")] or Enum.Ea
 local TWEEN_INFO_FAST   = TweenInfo.new(0.15, easingStyle, easingDir, 0, false, 0)
 local TWEEN_INFO_SMOOTH = TweenInfo.new(0.35, easingStyle, easingDir, 0, false, 0)
 
+-- isSilentAimActive - silent aim is only active while its bind is held
 local function isSilentAimActive()
     if not getFlag("SilentAim", false) then return false end
     local kc = getFlag("SilentAimKey")
@@ -180,6 +190,7 @@ end
 local playerPriority  = {}
 local playerlistActive = false
 
+-- caches
 local _bodyPartsCache     = {}
 local _bodyPartsCacheTime = {}
 local _lastVisiblePart    = {}
@@ -300,6 +311,7 @@ local function getKeyCode(name)
     return KEYCODE_LOOKUP[tostring(name):upper()] or Enum.KeyCode.E
 end
 
+-- items
 local ALL_ITEMS = {
     Gun   = {"[USP]","[Shotgun]","[Tactical Shotgun]","[Silencer]"},
     Food  = {"[Burger]","[Pizza]","[Chicken]","[Popcorn]","[Donut]","[Taco]","[Super Pizza] - 5 Stomps","[Sauce]"},
@@ -327,6 +339,7 @@ local function isWeapon(tool)
     return result
 end
 
+-- ESP
 local esp_tags = {}
 
 local function resolveGuiParent()
@@ -435,4 +448,1729 @@ local function animateMasterVisibility(tags, on)
     tween(tags.BoxStroke, TWEEN_INFO_FAST, { Transparency = t })
 end
 
-local function animate
+local function animateNameVisibility(tags, on)
+    if on then tags.NameGui.Enabled = true end
+    tween(tags.NameLabel, TWEEN_INFO_FAST, { TextTransparency = on and 0 or 1 })
+end
+
+local function animateDistVisibility(tags, on)
+    if on then tags.DistGui.Enabled = true end
+    tween(tags.DistLabel, TWEEN_INFO_FAST, { TextTransparency = on and 0 or 1 })
+end
+
+local function animateBoxVisibility(tags, on)
+    if on then tags.BoxFrame.Visible = true end
+    tween(tags.BoxStroke, TWEEN_INFO_FAST, { Transparency = on and 0 or 1 })
+end
+
+local function animateColorTransition(tags, newColor)
+    tween(tags.NameLabel, TWEEN_INFO_SMOOTH, { TextColor3 = newColor })
+    tween(tags.DistLabel, TWEEN_INFO_SMOOTH, { TextColor3 = newColor })
+    tween(tags.BoxStroke, TWEEN_INFO_SMOOTH, { Color = newColor })
+end
+
+RunService.RenderStepped:Connect(function()
+    local masterOn = _espMasterOn
+    local nameOn   = _espNameOn
+    local distOn   = _espDistOn
+    local boxOn    = _espBoxOn
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Head") then
+            if not esp_tags[plr] then createESP(plr) end
+            local tags = esp_tags[plr]
+            if not tags then continue end
+
+            local root = plr.Character.HumanoidRootPart
+            local head = plr.Character.Head
+
+            if tags.lastMasterOn ~= masterOn then
+                tags.lastMasterOn = masterOn
+                animateMasterVisibility(tags, masterOn)
+            end
+
+            if masterOn and root then
+                tags.NameGui.Adornee = root
+                tags.NameGui.Parent = root
+                tags.DistGui.Adornee = root
+                tags.DistGui.Parent = root
+
+                if tags.lastNameOn ~= nameOn then
+                    tags.lastNameOn = nameOn
+                    animateNameVisibility(tags, nameOn)
+                end
+                if tags.lastDistOn ~= distOn then
+                    tags.lastDistOn = distOn
+                    animateDistVisibility(tags, distOn)
+                end
+                if tags.lastBoxOn ~= boxOn then
+                    tags.lastBoxOn = boxOn
+                    animateBoxVisibility(tags, boxOn)
+                end
+
+                if nameOn then tags.NameLabel.Text = plr.DisplayName end
+                if distOn then
+                    tags.DistLabel.Text = tostring(math.round((root.Position - Camera.CFrame.Position).Magnitude)) .. "m"
+                end
+
+                local currentState = playerPriority[plr.UserId] or "Neutral"
+                if tags.lastColorState ~= currentState then
+                    tags.lastColorState = currentState
+                    animateColorTransition(tags, getTargetColor(plr.UserId))
+                end
+
+                if boxOn then
+                    local headPos, onScreen1 = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                    local feetPos, onScreen2 = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 2.5, 0))
+                    if onScreen1 and onScreen2 then
+                        local height = math.abs(headPos.Y - feetPos.Y)
+                        local width = height * 0.6
+                        tags.BoxFrame.Size = UDim2.new(0, width, 0, height)
+                        tags.BoxFrame.Position = UDim2.new(0, headPos.X - (width / 2), 0, headPos.Y)
+                    else
+                        tags.BoxStroke.Transparency = 1
+                    end
+                end
+            else
+                if tags.NameGui.Enabled then
+                    tags.NameGui.Enabled = false
+                    tags.DistGui.Enabled = false
+                    tags.BoxFrame.Visible = false
+                end
+            end
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    if esp_tags[plr] then
+        if esp_tags[plr].NameGui then esp_tags[plr].NameGui:Destroy() end
+        if esp_tags[plr].DistGui then esp_tags[plr].DistGui:Destroy() end
+        if esp_tags[plr].BoxGui then esp_tags[plr].BoxGui:Destroy() end
+        esp_tags[plr] = nil
+    end
+end)
+
+local function clearCharCaches(char)
+    if not char then return end
+    _bodyPartsCache[char]     = nil
+    _bodyPartsCacheTime[char] = nil
+    _lastVisiblePart[char]    = nil
+    _lastVisibleScan[char]    = nil
+    resolverState[char]       = nil
+    _knockCache[char]         = nil
+    _knockCacheTime[char]     = nil
+    _aimPartCache[char]       = nil
+    _aimPartCacheTime[char]   = nil
+    _visCache[char]           = nil
+    _visCacheTime[char]       = nil
+    _lastResolvedVel[char]    = nil
+    _advancedTrackers[char]   = nil
+end
+
+local function getCurrentPing()
+    local network = Stats:FindFirstChild("Network")
+    if network then
+        local ping = network:FindFirstChild("Ping")
+        if ping and ping:IsA("NumberValue") then return ping.Value end
+    end
+    return nil
+end
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        pcall(function()
+            getgenv().CachedPing = getCurrentPing() or 60
+        end)
+    end
+end)
+
+local function scanMotor6Ds(char)
+    local broken, total = 0, 0
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("Motor6D") then
+            total = total + 1
+            if not v.Enabled then broken = broken + 1 end
+        end
+    end
+    return total > 0 and broken >= 2
+end
+
+local function IsKnocked(char)
+    if not char then return true end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return true end
+    local state = hum:GetState()
+    if state == Enum.HumanoidStateType.Dead then return true end
+    if hum.Health <= 0 then return true end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root and root.Anchored then return true end
+    if hum.PlatformStand then return true end
+    if state == Enum.HumanoidStateType.Physics then return true end
+    if char:GetAttribute("Ragdolled") == true then return true end
+    if char:GetAttribute("Knocked") == true then return true end
+    local now = tick()
+    local cached = _knockCache[char]
+    if cached ~= nil and (now - (_knockCacheTime[char] or 0)) < KNOCK_CACHE_TTL then
+        return cached
+    end
+    local result = scanMotor6Ds(char)
+    _knockCache[char] = result
+    _knockCacheTime[char] = now
+    return result
+end
+
+local function hasForcefield(char)
+    return char and char:FindFirstChildOfClass("ForceField") ~= nil
+end
+
+local function isFriendCached(plr)
+    local now = tick()
+    if _friendCache[plr] ~= nil and (now - (_friendCacheTime[plr] or 0)) < FRIEND_CACHE_TTL then
+        return _friendCache[plr]
+    end
+    local ok, res = pcall(function() return plr:IsFriendsWith(LocalPlayer.UserId) end)
+    local val = ok and res or false
+    _friendCache[plr] = val
+    _friendCacheTime[plr] = now
+    return val
+end
+
+local function isFriend(plr)
+    local tag = playerPriority[plr.UserId]
+    if tag == "Friend" then return true end
+    if playerlistActive and tag ~= "Enemy" then return true end
+    if getFlag("AimbotFriendCheck", false) or getFlag("SilentAimFriendCheck", false) then
+        return isFriendCached(plr)
+    end
+    return false
+end
+
+local _prevPos     = setmetatable({}, {__mode = "k"})
+local _prevPosTime = setmetatable({}, {__mode = "k"})
+local _realMoving  = setmetatable({}, {__mode = "k"})
+
+local function updateRealMotion(char)
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local now = tick()
+    local prev, prevT = _prevPos[char], _prevPosTime[char]
+    _prevPos[char] = root.Position
+    _prevPosTime[char] = now
+    if not prev or not prevT then
+        _realMoving[char] = false
+        return
+    end
+    local dt = now - prevT
+    if dt < 0.001 then return end
+    local speed = (root.Position - prev).Magnitude / dt
+    local wasMoving = _realMoving[char] == true
+    if speed > 4 then
+        _realMoving[char] = true
+    elseif speed < 1.5 then
+        _realMoving[char] = false
+    else
+        _realMoving[char] = wasMoving
+    end
+end
+
+local validEnemiesCache = {}
+
+local function rebuildValidEnemies()
+    local knockCheck = getFlag("AimbotKnockCheck", false)
+    local ffCheck    = getFlag("AimbotForcefieldCheck", false)
+    table.clear(validEnemiesCache)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer then continue end
+        if isFriend(plr) then continue end
+        local char = plr.Character
+        if not char or not char.Parent then continue end
+        if knockCheck and IsKnocked(char) then continue end
+        if ffCheck and hasForcefield(char) then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+        if not root or not root.Parent then continue end
+        table.insert(validEnemiesCache, { player = plr, character = char, humanoid = hum, rootPart = root })
+    end
+end
+
+local function getValidEnemies() return validEnemiesCache end
+
+task.spawn(function()
+    local ticker = 0
+    while true do
+        task.wait(0.2)
+        ticker = ticker + 1
+        local players = Players:GetPlayers()
+        for i = 1, #players do
+            local plr = players[i]
+            if plr ~= LocalPlayer and plr.Character then
+                updateRealMotion(plr.Character)
+            end
+        end
+        if ticker % 5 == 0 then
+            _espMasterOn = getFlag("EnemyESP", false) == true
+            _espNameOn   = getFlag("NameESP", false) == true
+            _espDistOn   = getFlag("DistanceESP", false) == true
+            _espBoxOn    = getFlag("BoxESP", false) == true
+            if getFlag("Enabled", true) then pcall(rebuildValidEnemies) end
+        end
+    end
+end)
+
+pcall(rebuildValidEnemies)
+
+local _visRayParams = RaycastParams.new()
+_visRayParams.FilterType = Enum.RaycastFilterType.Exclude
+local _visIgnoreList = {}
+
+local function rebuildVisIgnore()
+    table.clear(_visIgnoreList)
+    if LocalPlayer.Character then _visIgnoreList[1] = LocalPlayer.Character end
+    _visRayParams.FilterDescendantsInstances = _visIgnoreList
+end
+
+LocalPlayer.CharacterAdded:Connect(rebuildVisIgnore)
+LocalPlayer.CharacterRemoving:Connect(rebuildVisIgnore)
+
+local function isVisible(targetPos, targetChar)
+    if targetChar then
+        local now = tick()
+        local cached = _visCache[targetChar]
+        if cached ~= nil and (now - (_visCacheTime[targetChar] or 0)) < VIS_CACHE_TTL then
+            return cached
+        end
+    end
+    if #_visIgnoreList == 0 then rebuildVisIgnore() end
+    local origin = Camera.CFrame.Position
+    local direction = targetPos - origin
+    if direction.Magnitude < 0.001 then return false end
+    local hit = Workspace:Raycast(origin, direction, _visRayParams)
+    local result
+    if not hit then result = true
+    elseif targetChar and hit.Instance:IsDescendantOf(targetChar) then result = true
+    else result = false end
+    if targetChar then
+        _visCache[targetChar] = result
+        _visCacheTime[targetChar] = tick()
+    end
+    return result
+end
+
+local function getBodyParts(char)
+    if not char then return {} end
+    local now = tick()
+    local cached = _bodyPartsCache[char]
+    if cached and (now - (_bodyPartsCacheTime[char] or 0)) < 2.0 then return cached end
+    local parts = {}
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("BasePart") and child.Transparency < 0.5 then
+            local lname = child.Name:lower()
+            if not lname:find("handle") then table.insert(parts, child) end
+        end
+    end
+    _bodyPartsCache[char] = parts
+    _bodyPartsCacheTime[char] = now
+    return parts
+end
+
+local function getClosestBodyPart(char)
+    if not char then return nil end
+    local parts = getBodyParts(char)
+    if #parts == 0 then return nil end
+    local crosshair = Camera.ViewportSize * 0.5
+    local mode    = getFlag("target_outline_mode", "Regular")
+    local scale   = tonumber(getFlag("target_outline_scale", 4.5)) or 4.5
+    local maxDist = tonumber(getFlag("target_outline_max_dist")) or math.huge
+    local best, bestScore = nil, math.huge
+    for _, part in ipairs(parts) do
+        local sp, on = Camera:WorldToViewportPoint(part.Position)
+        if on then
+            local dx, dy = sp.X - crosshair.X, sp.Y - crosshair.Y
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d <= maxDist then
+                local score = d
+                if mode == "Scaled" then
+                    score = d / math.max(scale, 0.01)
+                end
+                if score < bestScore then
+                    bestScore = score
+                    best = part
+                end
+            end
+        end
+    end
+    return best or parts[1]
+end
+
+local function findVisiblePart(char, allParts)
+    local now = tick()
+    local cached = _lastVisiblePart[char]
+    if cached and cached.Parent == char and (now - (_lastVisibleScan[char] or 0)) < VIS_SCAN_INTERVAL then
+        return cached
+    end
+    _lastVisibleScan[char] = now
+    for _, part in ipairs(allParts) do
+        if isVisible(part.Position, char) then
+            _lastVisiblePart[char] = part
+            return part
+        end
+    end
+    return nil
+end
+
+local function computeHardcodedAimPart(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        local selectedName = getFlag("HitpartSelection", "Head")
+        local targetEnum = HITPART_MAP[selectedName]
+        if targetEnum then
+            local ok, part = pcall(function() return hum:GetBodyPartR15(targetEnum) end)
+            if ok and part then return part end
+        end
+    end
+    local allParts = getBodyParts(char)
+    if #allParts == 0 then return char:FindFirstChild("HumanoidRootPart") end
+    local crosshair = Camera.ViewportSize * 0.5
+    local best, bestDist = nil, math.huge
+    for _, part in ipairs(allParts) do
+        local sp, on = Camera:WorldToViewportPoint(part.Position)
+        if on then
+            local dx, dy = sp.X - crosshair.X, sp.Y - crosshair.Y
+            local dist = dx * dx + dy * dy
+            if dist < bestDist then bestDist = dist; best = part end
+        end
+    end
+    if not best then best = allParts[1] end
+    if getFlag("AimbotWallCheck", false) and not isVisible(best.Position, char) then
+        local vis = findVisiblePart(char, allParts)
+        if vis then return vis end
+    end
+    return best
+end
+
+local function getAimPart(char)
+    if not char then return nil end
+    local now = tick()
+    local cached = _aimPartCache[char]
+    if cached and (now - (_aimPartCacheTime[char] or 0)) < AIM_PART_CACHE_TTL then return cached end
+    local part
+    if getFlag("combat_target_outline", false) then
+        part = getClosestBodyPart(char)
+        if not part then part = computeHardcodedAimPart(char) end
+    else
+        part = computeHardcodedAimPart(char)
+    end
+    _aimPartCache[char] = part
+    _aimPartCacheTime[char] = now
+    return part
+end
+
+function selectClosest(enemies)
+    local camPos = Camera.CFrame.Position
+    local best, bestDist = nil, math.huge
+    for _, data in ipairs(enemies) do
+        local root = data.rootPart
+        if not root then continue end
+        local d = (root.Position - camPos).Magnitude
+        if d < bestDist then bestDist = d; best = data end
+    end
+    return best
+end
+
+local function selectTarget(enemies)
+    if #enemies == 0 then return nil end
+    local priority = parseTargetPriority()
+    if priority == "manual" then return nil end
+    if priority == "random" then return enemies[math.random(1, #enemies)] end
+    if priority == "lookdirection" then
+        local camPos = Camera.CFrame.Position
+        local camLook = Camera.CFrame.LookVector
+        local bestDot, best = -2, nil
+        for _, data in ipairs(enemies) do
+            local root = data.rootPart
+            if root then
+                local delta = root.Position - camPos
+                if delta.Magnitude >= 0.001 then
+                    local dot = camLook:Dot(delta.Unit)
+                    if dot > bestDot then bestDot = dot; best = data end
+                end
+            end
+        end
+        if best and bestDot > 0 then return best end
+        return nil
+    end
+    if priority == "closesttocrosshair" then
+        local crosshair = Camera.ViewportSize * 0.5
+        local best, bestDist = nil, math.huge
+        for _, data in ipairs(enemies) do
+            local root = data.rootPart
+            if not root then continue end
+            local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+            if onScreen then
+                local dx, dy = pos.X - crosshair.X, pos.Y - crosshair.Y
+                local dist = dx * dx + dy * dy
+                if dist < bestDist then bestDist = dist; best = data end
+            end
+        end
+        if not best then best = selectClosest(enemies) end
+        return best
+    end
+    if priority == "lowesthealth" then
+        local best, bestHp = nil, math.huge
+        for _, data in ipairs(enemies) do
+            local hum = data.humanoid
+            if hum and hum.Health < bestHp then bestHp = hum.Health; best = data end
+        end
+        return best
+    end
+    if priority == "highesthealth" then
+        local best, bestHp = nil, -1
+        for _, data in ipairs(enemies) do
+            local hum = data.humanoid
+            if hum and hum.Health > bestHp then bestHp = hum.Health; best = data end
+        end
+        return best
+    end
+    if priority == "farthest" then
+        local camPos = Camera.CFrame.Position
+        local best, bestDist = nil, -1
+        for _, data in ipairs(enemies) do
+            local root = data.rootPart
+            if not root then continue end
+            local d = (root.Position - camPos).Magnitude
+            if d > bestDist then bestDist = d; best = data end
+        end
+        return best
+    end
+    return selectClosest(enemies)
+end
+
+local function IsAirborne(char)
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum:GetState() == Enum.HumanoidStateType.Freefall then return true end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local velY = root.AssemblyLinearVelocity.Y
+        if velY > 5 or velY < -5 then return true end
+    end
+    return false
+end
+
+local _groundRayParams = RaycastParams.new()
+_groundRayParams.FilterType = Enum.RaycastFilterType.Exclude
+local _groundIgnoreList = {}
+
+local function GetGroundIntersection(aimPos, targetChar)
+    local origin = Camera.CFrame.Position
+    local direction = aimPos - origin
+    if direction.Magnitude < 0.001 then return nil end
+    _groundIgnoreList[1] = LocalPlayer.Character
+    _groundIgnoreList[2] = targetChar
+    _groundIgnoreList[3] = nil
+    _groundRayParams.FilterDescendantsInstances = _groundIgnoreList
+    local result = Workspace:Raycast(origin, direction, _groundRayParams)
+    if result and result.Instance and result.Instance:IsA("BasePart") then
+        return result.Position
+    end
+    return nil
+end
+
+local _cachedAimbotKeyEnum = nil
+
+local function isAimbotKeyPhysicallyDown()
+    if not _cachedAimbotKeyEnum then return false end
+    if mouseButtons[_cachedAimbotKeyEnum] ~= nil then
+        return mouseButtons[_cachedAimbotKeyEnum]
+    end
+    return UserInputService:IsKeyDown(_cachedAimbotKeyEnum)
+end
+
+local _silentRayParams = RaycastParams.new()
+_silentRayParams.FilterType = Enum.RaycastFilterType.Include
+
+local function getSilentAimPart(char)
+    if not char then return nil end
+    local method = getFlag("SilentAimMethod", "Direct")
+    if method == "Direct" then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local selectedName = getFlag("HitpartSelection", "Head")
+            local targetEnum = HITPART_MAP[selectedName]
+            if targetEnum then
+                local ok, part = pcall(function() return hum:GetBodyPartR15(targetEnum) end)
+                if ok and part then return part end
+            end
+        end
+        return char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+    end
+    local allParts = getBodyParts(char)
+    if #allParts == 0 then return char:FindFirstChild("HumanoidRootPart") end
+    local crosshair = Camera.ViewportSize * 0.5
+    if method == "Closest Part" then
+        local best, bestDist = nil, math.huge
+        for _, part in ipairs(allParts) do
+            local sp, on = Camera:WorldToViewportPoint(part.Position)
+            if on then
+                local dx, dy = sp.X - crosshair.X, sp.Y - crosshair.Y
+                local dist = dx * dx + dy * dy
+                if dist < bestDist then bestDist = dist; best = part end
+            end
+        end
+        if not best then best = allParts[1] end
+        if getFlag("SilentAimWallCheck", false) and not isVisible(best.Position, char) then
+            local vis = findVisiblePart(char, allParts)
+            if vis then return vis end
+        end
+        return best
+    end
+    if method == "Nearest Point" then
+        local ray = Camera:ViewportPointToRay(crosshair.X, crosshair.Y)
+        _silentRayParams.FilterDescendantsInstances = allParts
+        local result = Workspace:Raycast(ray.Origin, ray.Direction * 10000, _silentRayParams)
+        if result and (not getFlag("SilentAimWallCheck", false) or isVisible(result.Position, char)) then
+            return result.Instance
+        end
+        local best, bestDist = nil, math.huge
+        for _, part in ipairs(allParts) do
+            local sp, on = Camera:WorldToViewportPoint(part.Position)
+            if on then
+                local dx, dy = sp.X - crosshair.X, sp.Y - crosshair.Y
+                local dist = dx * dx + dy * dy
+                if dist < bestDist then bestDist = dist; best = part end
+            end
+        end
+        if not best then best = allParts[1] end
+        if getFlag("SilentAimWallCheck", false) and not isVisible(best.Position, char) then
+            local vis = findVisiblePart(char, allParts)
+            if vis then return vis end
+        end
+        return best
+    end
+    return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
+
+local function detectAntiAim(part)
+    if not part then return false end
+    local hum = part.Parent and part.Parent:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return false end
+    local vel = part.AssemblyLinearVelocity
+    local intent = hum.MoveDirection * hum.WalkSpeed
+    local velMag = Vector3.new(vel.X, 0, vel.Z).Magnitude
+    local intentMag = intent.Magnitude
+    if velMag > 3 and intentMag < 1 then return true end
+    if velMag > 2 and intentMag > 2 then
+        local flatVel = Vector3.new(vel.X, 0, vel.Z).Unit
+        local flatIntent = intent.Unit
+        if flatVel:Dot(flatIntent) < -0.3 then return true end
+    end
+    local root = part.Parent:FindFirstChild("HumanoidRootPart")
+    if root and root.AssemblyAngularVelocity.Magnitude > 8 then return true end
+    return false
+end
+
+local function getResolverVelocity(part)
+    if not part then return Vector3.zero end
+    local char = part.Parent
+    if not char then return Vector3.zero end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    local observed = hum and (hum.MoveDirection * hum.WalkSpeed) or nil
+    local claimed = part.AssemblyLinearVelocity
+    if not observed then return claimed end
+    if _realMoving[char] == false then return Vector3.zero end
+    if getFlag("Resolver", false) == true then return observed end
+    local useObserved = false
+    if getFlag("AutoResolver", false) == true then
+        local now = tick()
+        local cached = resolverState[char]
+        if not cached or (now - cached.time) > 0.15 then
+            local detected = detectAntiAim(part)
+            resolverState[char] = { detected = detected, time = now }
+            cached = resolverState[char]
+        end
+        if cached and cached.detected then useObserved = true end
+    end
+    local claimedFlat  = Vector3.new(claimed.X, 0, claimed.Z)
+    local observedFlat = Vector3.new(observed.X, 0, observed.Z)
+    if (claimedFlat - observedFlat).Magnitude > 15 then useObserved = true end
+    local result = useObserved and observed or claimed
+    local prev = _lastResolvedVel[char]
+    if prev then result = prev:Lerp(result, 0.25) end
+    _lastResolvedVel[char] = result
+    return result
+end
+
+local function createABTracker()
+    return {
+        px = 0, py = 0, pz = 0,
+        vx = 0, vy = 0, vz = 0,
+        init = false, last = tick(),
+    }
+end
+
+local function updateAdvancedTracker(char, part)
+    if not char or not part then return end
+    local t = _advancedTrackers[char]
+    if not t then
+        t = createABTracker()
+        _advancedTrackers[char] = t
+        t.last = tick()
+    end
+    local now = tick()
+    local dt = now - t.last
+    t.last = now
+    if dt <= 0 then dt = 1 / 60 end
+    if dt > 0.5 then dt = 0.5 end
+    local alpha = tonumber(getFlag("ABAlpha", 0.6)) or 0.6
+    local beta  = tonumber(getFlag("ABBeta", 0.15)) or 0.15
+    if alpha < 0.01 then alpha = 0.01 end
+    if alpha > 1 then alpha = 1 end
+    if beta < 0 then beta = 0 end
+    if beta > 1 then beta = 1 end
+    local p = part.Position
+    if not t.init then
+        t.px, t.py, t.pz = p.X, p.Y, p.Z
+        t.vx, t.vy, t.vz = 0, 0, 0
+        t.init = true
+        return
+    end
+    local predX = t.px + t.vx * dt
+    local predY = t.py + t.vy * dt
+    local predZ = t.pz + t.vz * dt
+    local rx = p.X - predX
+    local ry = p.Y - predY
+    local rz = p.Z - predZ
+    t.px = predX + alpha * rx
+    t.py = predY + alpha * ry
+    t.pz = predZ + alpha * rz
+    t.vx = t.vx + (beta / dt) * rx
+    t.vy = t.vy + (beta / dt) * ry
+    t.vz = t.vz + (beta / dt) * rz
+end
+
+local function getAdvancedPredicted(char, aimPart, timeAhead)
+    local t = _advancedTrackers[char]
+    if not t or not t.init then return nil end
+    if not aimPart or not aimPart.Parent then return nil end
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    timeAhead = timeAhead or 0.045
+    local predRoot = Vector3.new(
+        t.px + t.vx * timeAhead,
+        t.py + t.vy * timeAhead,
+        t.pz + t.vz * timeAhead
+    )
+    local offset = aimPart.Position - root.Position
+    return predRoot + offset
+end
+
+local function getAdvancedTimeAhead(aimPos, camPos)
+    if not getFlag("AdvancedAutoTime", false) then
+        return tonumber(getFlag("AdvancedTimeAhead", 0.045)) or 0.045
+    end
+    local bulletSpeed = tonumber(getFlag("BulletSpeed", 1200)) or 1200
+    local ping = (getgenv().CachedPing or 60) / 1000
+    local dist = (aimPos - camPos).Magnitude
+    return dist / math.max(bulletSpeed, 1) + ping * 0.5
+end
+
+RunService.RenderStepped:Connect(function()
+    local players = Players:GetPlayers()
+    for i = 1, #players do
+        local plr = players[i]
+        if plr ~= LocalPlayer and plr.Character then
+            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                updateAdvancedTracker(plr.Character, root)
+            end
+        end
+    end
+end)
+
+local function applyPrediction(aimPos, aimPart, char, camPos, mode, sX, sY, sZ)
+    sX = sX or 0.115
+    sY = sY or 0.115
+    sZ = sZ or 0.115
+    if mode == "Advanced" and char and aimPart then
+        local dtAhead = getAdvancedTimeAhead(aimPos, camPos)
+        local aPos = getAdvancedPredicted(char, aimPart, dtAhead)
+        if aPos then return aPos end
+    end
+    local vel = aimPart and getResolverVelocity(aimPart) or Vector3.zero
+    return aimPos + Vector3.new(vel.X * sX, vel.Y * sY, vel.Z * sZ)
+end
+
+local function computeSilentAimPosition(part, usePrediction, useAutoPred, accuracy)
+    if not part then return nil end
+    local aimPos = part.Position
+    local char = part.Parent
+    if usePrediction or useAutoPred then
+        local mode = getFlag("SilentAimAutoPredictionMode", "Regular")
+        local hPred = getFlag("SilentAimPredX", 0.115)
+        local vPred = getFlag("SilentAimPredY", 0.115)
+        local zPred = getFlag("SilentAimPredZ", 0.115)
+        aimPos = applyPrediction(aimPos, part, char, Camera.CFrame.Position, mode, hPred, vPred, zPred)
+    end
+    if accuracy and accuracy < 100 then
+        local spread = (100 - accuracy) / 100 * 0.04
+        local angle = math.random() * 2 * math.pi
+        local randomDir = Vector3.new(math.cos(angle), math.sin(angle), 0) * spread
+        aimPos = aimPos + randomDir
+    end
+    return aimPos
+end
+
+local remote = ReplicatedStorage:FindFirstChild("MAINEVENT")
+if remote and not remote:IsA("RemoteEvent") then remote = nil end
+
+local function getRemote()
+    if remote and remote:IsA("RemoteEvent") then return remote end
+    local r = ReplicatedStorage:FindFirstChild("MAINEVENT")
+    if r and r:IsA("RemoteEvent") then
+        remote = r
+        return remote
+    end
+    return nil
+end
+
+local currentTarget  = nil
+local SilentTarget   = nil
+local stickyPlayer   = nil
+local hasEverPicked  = false
+
+local function buildTargetFromPlayer(player)
+    if not player or not player.Parent then return nil end
+    local char = player.Character
+    if not char or not char.Parent then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+    if not root or not root.Parent then return nil end
+    return { player = player, character = char, humanoid = hum, rootPart = root }
+end
+
+local function clearSticky()
+    stickyPlayer = nil
+    hasEverPicked = false
+    currentTarget = nil
+    SilentTarget = nil
+end
+
+local function pickTargetUnderCrosshair()
+    local enemies = getValidEnemies()
+    if #enemies == 0 then return end
+    local crosshair = Camera.ViewportSize * 0.5
+    local best, bestDist = nil, math.huge
+    local MAX_PIXEL_DIST = 120
+    for _, data in ipairs(enemies) do
+        local char = data.character
+        if char then
+            local root = data.rootPart
+            local head = char:FindFirstChild("Head")
+            if root then
+                local sp, on = Camera:WorldToViewportPoint(root.Position)
+                if on then
+                    local dx, dy = sp.X - crosshair.X, sp.Y - crosshair.Y
+                    local d = math.sqrt(dx * dx + dy * dy)
+                    if d < bestDist then bestDist = d; best = data end
+                end
+            end
+            if head then
+                local sp, on = Camera:WorldToViewportPoint(head.Position)
+                if on then
+                    local dx, dy = sp.X - crosshair.X, sp.Y - crosshair.Y
+                    local d = math.sqrt(dx * dx + dy * dy)
+                    if d < bestDist then bestDist = d; best = data end
+                end
+            end
+        end
+    end
+    if best and bestDist <= MAX_PIXEL_DIST then
+        stickyPlayer = best.player
+        hasEverPicked = true
+        currentTarget = best
+        if isSilentAimActive() then SilentTarget = currentTarget end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        mouseButtons[Enum.UserInputType.MouseButton1] = true
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        mouseButtons[Enum.UserInputType.MouseButton2] = true
+    end
+
+    if not getFlag("Enabled", true) then return end
+
+    if isGamepadInput(input.UserInputType) then
+        if input.KeyCode == Enum.KeyCode.DPadDown then
+            if getFlag("Activation", "Hold") == "Toggle" then
+                if aimbotToggleState then
+                    aimbotToggleState = false
+                    clearSticky()
+                else
+                    pickTargetUnderCrosshair()
+                    if currentTarget then aimbotToggleState = true end
+                end
+            end
+        end
+        return
+    end
+
+    if gpe then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard and input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
+    if UserInputService:GetFocusedTextBox() then return end
+
+    if getFlag("Activation", "Hold") == "Toggle" then
+        local aimRaw = getFlag("AimbotKey")
+        if aimRaw then
+            local aimKey = getKeyCode(aimRaw)
+            if isKeyboardKeyCode(aimKey) then
+                if input.KeyCode == aimKey then
+                    if aimbotToggleState then
+                        aimbotToggleState = false
+                        clearSticky()
+                    else
+                        pickTargetUnderCrosshair()
+                        if currentTarget then aimbotToggleState = true end
+                    end
+                    return
+                end
+            elseif input.UserInputType == aimKey then
+                if aimbotToggleState then
+                    aimbotToggleState = false
+                    clearSticky()
+                else
+                    pickTargetUnderCrosshair()
+                    if currentTarget then aimbotToggleState = true end
+                end
+                return
+            end
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        mouseButtons[Enum.UserInputType.MouseButton1] = false
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        mouseButtons[Enum.UserInputType.MouseButton2] = false
+    end
+end)
+
+local isTouching = false
+if UserInputService.TouchEnabled then
+    UserInputService.TouchStarted:Connect(function(_, gameProcessedEvent)
+        if gameProcessedEvent then return end
+        isTouching = true
+    end)
+    UserInputService.TouchEnded:Connect(function() isTouching = false end)
+end
+
+local function fireSilentAim(aimPos)
+    local r = getRemote()
+    if not r then return end
+    r:FireServer("MOUSE", aimPos)
+end
+
+local function getWeaponHitChance(tool)
+    if not tool or not tool:IsA("Tool") then return nil end
+    local cached = _weaponHitCache[tool]
+    if cached ~= nil then
+        if cached == false then return nil end
+        return cached
+    end
+    if getFlag("GunConfigEnabled", true) == false then
+        _weaponHitCache[tool] = false
+        return nil
+    end
+    local rawName = tool.Name:gsub("^%[(.*)%]$", "%1")
+    local configs = getFlag("GunConfigs", {})
+    local cfg = configs[rawName]
+    local result = nil
+    if cfg and type(cfg.HitChance) == "number" then
+        result = math.clamp(cfg.HitChance, 0, 100)
+    end
+    _weaponHitCache[tool] = result or false
+    return result
+end
+
+local function prepareSilentAim()
+    if not isSilentAimActive() then return end
+    local currentTool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
+    if currentTool and not isWeapon(currentTool) then return end
+    local hitChance = getFlag("SilentAimHitChance", 85)
+    if currentTool then
+        local weaponHit = getWeaponHitChance(currentTool)
+        if weaponHit then hitChance = weaponHit end
+    end
+    if math.random(100) > hitChance then return end
+    local targetPlayer = SilentTarget
+    if not targetPlayer or not targetPlayer.character then return end
+    if targetPlayer.character ~= targetPlayer.player.Character then return end
+    local targetChar = targetPlayer.character
+    if getFlag("SilentAimKnockCheck", false) and IsKnocked(targetChar) then return end
+    if getFlag("SilentAimForcefieldCheck", false) and hasForcefield(targetChar) then return end
+    if getFlag("SilentAimFriendCheck", false) and isFriendCached(targetPlayer.player) then return end
+    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+    local aimPart = getSilentAimPart(targetChar)
+    if not aimPart then return end
+    if getFlag("SilentAimWallCheck", false) and not isVisible(aimPart.Position, targetChar) then return end
+    local aimPos = computeSilentAimPosition(aimPart, getFlag("SilentAimPrediction", false), getFlag("SilentAimAutoPrediction", false), hitChance)
+    local antiCurve = getFlag("SilentAimAntiCurve", 8)
+    if antiCurve > 0 then
+        local camCF = Camera.CFrame
+        local dir = (aimPos - camCF.Position).Unit
+        local angle = math.deg(math.acos(camCF.LookVector:Dot(dir)))
+        if angle > antiCurve then return end
+    end
+    if getFlag("SilentAimAntiGround", false) then
+        local groundHit = GetGroundIntersection(aimPos, targetChar)
+        if groundHit then return end
+    end
+    fireSilentAim(aimPos)
+end
+
+local function onToolActivated() prepareSilentAim() end
+
+local function hookTool(tool)
+    if not tool:IsA("Tool") or hookedTools[tool] then return end
+    hookedTools[tool] = true
+    if not isWeapon(tool) then return end
+    tool.Activated:Connect(onToolActivated)
+end
+
+local function hookAllTools()
+    if LocalPlayer.Backpack then
+        for _, t in ipairs(LocalPlayer.Backpack:GetChildren()) do hookTool(t) end
+    end
+    if LocalPlayer.Character then
+        for _, t in ipairs(LocalPlayer.Character:GetChildren()) do hookTool(t) end
+    end
+end
+
+hookAllTools()
+LocalPlayer.CharacterAdded:Connect(function(char)
+    hookAllTools()
+    char.ChildAdded:Connect(hookTool)
+end)
+if LocalPlayer.Backpack then
+    LocalPlayer.Backpack.ChildAdded:Connect(hookTool)
+end
+
+local _cachedPriority     = "closest"
+local _cachedPriorityRaw  = nil
+local _cachedActivation   = "Hold"
+local _lastPriorityPoll   = 0
+
+local function aimbotStep(camCF, camPos, camLook, dt)
+    if not getFlag("Enabled", true) then return end
+
+    local now = tick()
+    if now - _lastPriorityPoll > 0.2 then
+        _lastPriorityPoll = now
+        local rawPriority = tostring(getFlag("TargetPriority", "Closest"))
+        if rawPriority ~= _cachedPriorityRaw then
+            _cachedPriorityRaw = rawPriority
+            local key = rawPriority:lower():gsub("[%s_%-]", "")
+            _cachedPriority = TARGET_PRIORITY_MAP[key] or "closest"
+        end
+        _cachedActivation = getFlag("Activation", "Hold")
+        _cachedSmoothX    = tonumber(getFlag("SmoothnessX", 0.25)) or 0.25
+        _cachedSmoothY    = tonumber(getFlag("SmoothnessY", 0.25)) or 0.25
+
+        local rawKey = getFlag("AimbotKey")
+        local resolved = rawKey and getKeyCode(rawKey) or nil
+        if resolved and (isKeyboardKeyCode(resolved) or mouseButtons[resolved] ~= nil) then
+            _cachedAimbotKeyEnum = resolved
+        else
+            _cachedAimbotKeyEnum = nil
+        end
+    end
+
+    local activation = _cachedActivation
+    if activation ~= lastActivationMode then
+        aimbotToggleState = false
+        lastActivationMode = activation
+        clearSticky()
+    end
+
+    local shouldLock = false
+    local enemiesList = nil
+    local priority = _cachedPriority
+    local physical = isAimbotKeyPhysicallyDown()
+
+    if activation == "Rage" then
+        shouldLock = true
+        enemiesList = getValidEnemies()
+        currentTarget = selectTarget(enemiesList)
+        if not currentTarget then SilentTarget = nil; return end
+    elseif activation == "Mobile" then
+        if isTouching then
+            shouldLock = true
+            enemiesList = getValidEnemies()
+            currentTarget = selectTarget(enemiesList)
+            if not currentTarget then SilentTarget = nil; return end
+        else
+            currentTarget = nil; SilentTarget = nil; return
+        end
+    elseif activation == "Hold" then
+        if physical then
+            shouldLock = true
+            enemiesList = getValidEnemies()
+        else
+            currentTarget = nil; SilentTarget = nil; return
+        end
+    elseif activation == "Toggle" then
+        if aimbotToggleState then
+            shouldLock = true
+            enemiesList = getValidEnemies()
+        else
+            currentTarget = nil; SilentTarget = nil; return
+        end
+    else
+        currentTarget = nil; SilentTarget = nil; return
+    end
+
+    if not shouldLock then currentTarget = nil; SilentTarget = nil; return end
+
+    if activation ~= "Rage" and activation ~= "Mobile" then
+        if stickyPlayer and not stickyPlayer.Parent then
+            stickyPlayer = nil
+            hasEverPicked = false
+            aimbotToggleState = false
+        end
+
+        if not stickyPlayer and not hasEverPicked and priority ~= "manual" and enemiesList and #enemiesList > 0 then
+            local pick = selectTarget(enemiesList)
+            if pick then
+                stickyPlayer = pick.player
+                hasEverPicked = true
+            end
+        end
+
+        currentTarget = nil
+        if stickyPlayer then
+            if enemiesList then
+                for _, data in ipairs(enemiesList) do
+                    if data.player == stickyPlayer then
+                        currentTarget = data
+                        break
+                    end
+                end
+            end
+            if not currentTarget then
+                local spChar = stickyPlayer.Character
+                local skipKnock = getFlag("AimbotKnockCheck", false) and IsKnocked(spChar)
+                local skipFF = getFlag("AimbotForcefieldCheck", false) and hasForcefield(spChar)
+                if not skipKnock and not skipFF then
+                    currentTarget = buildTargetFromPlayer(stickyPlayer)
+                end
+            end
+        end
+    end
+
+    if not currentTarget then SilentTarget = nil; return end
+    if not currentTarget.player or not currentTarget.player.Parent then
+        currentTarget = nil; SilentTarget = nil; return
+    end
+    if currentTarget.character ~= currentTarget.player.Character then
+        local rebuilt = buildTargetFromPlayer(currentTarget.player)
+        if rebuilt then currentTarget = rebuilt
+        else SilentTarget = nil; return end
+    end
+
+    if isSilentAimActive() then SilentTarget = currentTarget
+    else SilentTarget = nil end
+
+    local char = currentTarget.character
+    local root = currentTarget.rootPart
+    if not char or not char.Parent or not root or not root.Parent then
+        SilentTarget = nil; return
+    end
+
+    local aimPart = getAimPart(char)
+    if not aimPart then aimPart = root end
+    if not aimPart or not aimPart.Parent then SilentTarget = nil; return end
+    local aimPos = aimPart.Position
+
+    local predictionOn = getFlag("PredictionEnabled", false) or getFlag("Prediction", false) or getFlag("AutoPrediction", false)
+    if predictionOn then
+        local mode = getFlag("AutoPredictionMode", "Regular")
+        local hPred = getFlag("PredictionX", 0.115)
+        local vPred = getFlag("PredictionY", 0.115)
+        local zPred = getFlag("PredictionZ", 0.115)
+        aimPos = applyPrediction(aimPos, aimPart, char, camPos, mode, hPred, vPred, zPred)
+    end
+
+    if IsAirborne(char) then
+        local jumpOff = tonumber(getFlag("JumpOffset", 0)) or 0
+        if jumpOff ~= 0 then aimPos = aimPos + Vector3.new(0, jumpOff, 0) end
+    else
+        local fallOff = tonumber(getFlag("FallOffset", 0)) or 0
+        if fallOff ~= 0 then aimPos = aimPos + Vector3.new(0, fallOff, 0) end
+    end
+
+    if getFlag("AimbotWallCheck", false) then
+        if not isVisible(aimPos, char) then return end
+    end
+
+    local desiredCF = CFrame.lookAt(camPos, aimPos)
+
+    local smoothX = _cachedSmoothX
+    local smoothY = _cachedSmoothY
+    if smoothX <= 0 then smoothX = 0.01 end
+    if smoothY <= 0 then smoothY = 0.01 end
+    if smoothX > 10 then smoothX = 10 end
+    if smoothY > 10 then smoothY = 10 end
+
+    local combinedSmooth = (smoothX + smoothY) / 2
+    local alpha = 1 - math.exp(-combinedSmooth * dt * 60)
+
+    if alpha >= 0.999 then
+        Camera.CFrame = desiredCF
+    else
+        Camera.CFrame = camCF:Lerp(desiredCF, alpha)
+    end
+end
+
+local lastAutoShootTime = 0
+
+local function autoShootStep()
+    if not getFlag("AutoShoot", false) then return end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local tool = char:FindFirstChildWhichIsA("Tool")
+    if not tool then return end
+    if not isWeapon(tool) then return end
+
+    local rawName = tool.Name:match("%[(.-)%]") or tool.Name
+    rawName = rawName:gsub("^%s+", ""):gsub("%s+$", "")
+    if rawName:lower() ~= "usp" then return end
+
+    local hitChance = getFlag("AutoShootHitChance", 100)
+    local weaponHit = getWeaponHitChance(tool)
+    if weaponHit then hitChance = weaponHit end
+    if math.random(100) > hitChance then return end
+
+    local now = tick()
+    local delay = tonumber(getFlag("AutoShootDelay", 0.1)) or 0.1
+    if now - lastAutoShootTime < delay then return end
+
+    local target = currentTarget or SilentTarget
+    if not target or not target.character then return end
+    if target.character ~= target.player.Character then return end
+    local targetChar = target.character
+    if getFlag("AutoShootForcefieldCheck", false) and targetChar:FindFirstChildOfClass("ForceField") then return end
+    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
+
+    if getFlag("AutoAir", false) then
+        if hum:GetState() ~= Enum.HumanoidStateType.Freefall then return end
+    end
+
+    local aimPart = getAimPart(targetChar)
+    if not aimPart then return end
+    local aimPos = aimPart.Position
+
+    if getFlag("PredictionEnabled", false) or getFlag("Prediction", false) or getFlag("AutoPrediction", false) then
+        local mode = getFlag("AutoPredictionMode", "Regular")
+        local hPred = getFlag("PredictionX", 0.115)
+        local vPred = getFlag("PredictionY", 0.115)
+        local zPred = getFlag("PredictionZ", 0.115)
+        aimPos = applyPrediction(aimPos, aimPart, targetChar, Camera.CFrame.Position, mode, hPred, vPred, zPred)
+    end
+
+    if getFlag("AimbotWallCheck", false) and not isVisible(aimPos, targetChar) then return end
+
+    local antiCurve = tonumber(getFlag("AntiCurve", 8)) or 8
+    if antiCurve > 0 then
+        local camCF = Camera.CFrame
+        local dir = (aimPos - camCF.Position).Unit
+        local angle = math.deg(math.acos(camCF.LookVector:Dot(dir)))
+        if angle > antiCurve then return end
+    end
+
+    if tool.Parent == char then
+        tool:Activate()
+        lastAutoShootTime = now
+    end
+end
+
+local lastAutoReloadTime = 0
+local enemyAmmoCache = {}
+local prefireCooldown = {}
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        pcall(function()
+            if getFlag("AutoReload", false) then
+                local char = LocalPlayer.Character
+                if char then
+                    local tool = char:FindFirstChildWhichIsA("Tool")
+                    if tool then
+                        local now = tick()
+                        if now - lastAutoReloadTime > 1 then
+                            local shouldReload = false
+                            local ammoProp = tool:FindFirstChild("AMMO") or tool:FindFirstChild("Ammo") or tool:FindFirstChild("CurrentAmmo") or tool:FindFirstChild("Clip")
+                            if ammoProp and (ammoProp:IsA("NumberValue") or ammoProp:IsA("IntValue")) and ammoProp.Value == 0 then
+                                shouldReload = true
+                            end
+                            if shouldReload then
+                                local reloadRemote = tool:FindFirstChild("rl") or tool:FindFirstChild("Reload") or ReplicatedStorage:FindFirstChild("Reload")
+                                if reloadRemote and reloadRemote:IsA("RemoteEvent") then
+                                    reloadRemote:FireServer()
+                                    lastAutoReloadTime = now
+                                else
+                                    local rKey = Enum.KeyCode.R
+                                    if firekey then
+                                        firekey(rKey, "down")
+                                        task.wait(0.05)
+                                        firekey(rKey, "up")
+                                    end
+                                    lastAutoReloadTime = now
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if getFlag("Prefire", false) and currentTarget then
+                if isSilentAimActive() and SilentTarget and currentTarget.player ~= SilentTarget.player then return end
+                local char = LocalPlayer.Character
+                if not char then return end
+                local myTool = char:FindFirstChildWhichIsA("Tool")
+                if not myTool then return end
+                if not isWeapon(myTool) then return end
+                local enemyChar = currentTarget.character
+                if not enemyChar then return end
+                if enemyChar ~= currentTarget.player.Character then return end
+                local enemyTool = enemyChar:FindFirstChildWhichIsA("Tool")
+                if not enemyTool then return end
+                if not isWeapon(enemyTool) then return end
+                local enemyAmmo = enemyTool:FindFirstChild("AMMO") or enemyTool:FindFirstChild("Ammo") or enemyTool:FindFirstChild("CurrentAmmo") or enemyTool:FindFirstChild("Clip")
+                if enemyAmmo and (enemyAmmo:IsA("NumberValue") or enemyAmmo:IsA("IntValue")) then
+                    local currentAmmo = enemyAmmo.Value
+                    local key = enemyChar.Name .. "_" .. enemyTool.Name
+                    if enemyAmmoCache[key] ~= nil and currentAmmo < enemyAmmoCache[key] then
+                        local lastFire = prefireCooldown[key] or 0
+                        if tick() - lastFire > 0.2 then
+                            local aimPart = getAimPart(enemyChar)
+                            if aimPart then
+                                local aimPos = aimPart.Position
+                                if getFlag("PredictionEnabled", false) or getFlag("Prediction", false) or getFlag("AutoPrediction", false) then
+                                    local mode = getFlag("AutoPredictionMode", "Regular")
+                                    local hPred = getFlag("PredictionX", 0.115)
+                                    local vPred = getFlag("PredictionY", 0.115)
+                                    local zPred = getFlag("PredictionZ", 0.115)
+                                    aimPos = applyPrediction(aimPos, aimPart, enemyChar, Camera.CFrame.Position, mode, hPred, vPred, zPred)
+                                end
+                                if getFlag("AimbotWallCheck", false) and not isVisible(aimPos, enemyChar) then
+                                else
+                                    local antiCurve = tonumber(getFlag("AntiCurve", 8)) or 8
+                                    if antiCurve > 0 then
+                                        local dir = (aimPos - Camera.CFrame.Position).Unit
+                                        local angle = math.deg(math.acos(Camera.CFrame.LookVector:Dot(dir)))
+                                        if angle <= antiCurve then
+                                            if myTool.Parent == char then
+                                                myTool:Activate()
+                                                prefireCooldown[key] = tick()
+                                            end
+                                        end
+                                    else
+                                        if myTool.Parent == char then
+                                            myTool:Activate()
+                                            prefireCooldown[key] = tick()
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    enemyAmmoCache[key] = currentAmmo
+                end
+            end
+        end)
+    end
+end)
+
+local FOOD_NAMES = {"Burger", "Pizza", "Chicken", "Popcorn", "Donut", "Taco", "Super Pizza", "Sauce"}
+local STOMP_FOODS = {"Super Pizza", "Sauce"}
+
+local function stripBrackets(name) return name:gsub("^%[(.*)%]$", "%1") end
+
+local function findFood()
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer.Backpack
+    if not char then return nil end
+    local function scan(container)
+        if not container then return nil end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Tool") then
+                local raw = stripBrackets(child.Name)
+                for _, food in ipairs(FOOD_NAMES) do
+                    if raw:lower() == food:lower() then return child end
+                end
+            end
+        end
+        return nil
+    end
+    local found = scan(backpack)
+    if found then return found end
+    found = scan(char)
+    if found then return found end
+    return nil
+end
+
+local previousToolName = nil
+local isEating = false
+local eatingPaused = false
+local pauseEndTime = 0
+local currentEatingFood = nil
+
+local function onCharacterChildAdded(child)
+    if isEating and child:IsA("Tool") then
+        if child == currentEatingFood then return end
+        isEating = false
+        eatingPaused = true
+        pauseEndTime = tick() + 2
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    char.ChildAdded:Connect(onCharacterChildAdded)
+end)
+if LocalPlayer.Character then
+    LocalPlayer.Character.ChildAdded:Connect(onCharacterChildAdded)
+end
+
+local function eatFood()
+    if not getFlag("AutoEat", false) then return end
+    if eatingPaused then
+        if tick() < pauseEndTime then return else eatingPaused = false end
+    end
+    local threshold = tonumber(getFlag("AutoEatThreshold", 75)) or 75
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if hum.Health <= 0 then return end
+    local healthPercent = hum.Health / hum.MaxHealth * 100
+    if healthPercent > threshold then return end
+    local food = findFood()
+    if not food then return end
+    isEating = true
+    currentEatingFood = food
+    local currentTool = nil
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") and child ~= food then
+            currentTool = child
+            break
+        end
+    end
+    if currentTool then
+        previousToolName = currentTool.Name
+        currentTool.Parent = LocalPlayer.Backpack
+        task.wait(0.15)
+    else
+        previousToolName = nil
+    end
+    if food.Parent ~= char then
+        food.Parent = char
+        task.wait(0.15)
+    end
+    if food.Parent ~= char then
+        isEating = false
+        currentEatingFood = nil
+        return
+    end
+    local rawName = stripBrackets(food.Name)
+    local activations = 1
+    for _, stomp in ipairs(STOMP_FOODS) do
+        if rawName:lower() == stomp:lower() then
+            activations = 5
+            break
+        end
+    end
+    local safety = 0
+    while hum.Health < hum.MaxHealth and safety < 40 do
+        safety = safety + 1
+        if not isEating then break end
+        if food.Parent ~= char then
+            food.Parent = char
+            task.wait(0.15)
+            if food.Parent ~= char then break end
+        end
+        for _ = 1, activations do
+            if food:IsA("Tool") and food.Parent == char then food:Activate() end
+            task.wait(0.08)
+        end
+        if not food.Parent then
+            food = findFood()
+            if not food then break end
+            currentEatingFood = food
+            food.Parent = char
+            task.wait(0.15)
+        end
+        task.wait(0.05)
+    end
+    isEating = false
+    currentEatingFood = nil
+    if hum.Health >= hum.MaxHealth and previousToolName then
+        local backpack = LocalPlayer.Backpack
+        if backpack then
+            local toolToEquip = backpack:FindFirstChild(previousToolName)
+            if toolToEquip and toolToEquip:IsA("Tool") then
+                toolToEquip.Parent = char
+                task.wait(0.15)
+            end
+        end
+        previousToolName = nil
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if getFlag("AutoEat", false) then
+            local ok, err = pcall(eatFood)
+            if not ok then warn("[AutoEat] " .. tostring(err)) end
+        end
+    end
+end)
+
+local staffUserIds = {
+    4600602803, 4307662781, 1518920775, 509126053, 3909295243, 310811339,
+    1236712946, 4559062275, 3025545586, 2755167654, 245268896,
+    8329142454, 1301544215, 1499556980,
+}
+local staffGroupId = 996191638
+local staffSet = {}
+for _, id in ipairs(staffUserIds) do staffSet[id] = true end
+
+local function isStaff(player)
+    if staffSet[player.UserId] then return true end
+    if getFlag("GroupCheck", false) then
+        local ok, inGroup = pcall(function() return player:IsInGroup(staffGroupId) end)
+        if ok and inGroup then return true end
+    end
+    return false
+end
+
+local function handleStaff(player, message)
+    if not getFlag("AntiModEnabled", false) then return end
+    local action = getFlag("ModAction", "Notify")
+    if action == "Notify" then
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = player.DisplayName,
+                Text = player.Name .. " " .. message,
+                Duration = 8,
+                Icon = "rbxassetid://15059364356"
+            })
+        end)
+    elseif action == "Server hop" or action == "Kick" then
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end
+end
+
+if getFlag("CheckModsOnLoad", false) then
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and isStaff(player) then
+            handleStaff(player, "joined the server")
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if isStaff(player) then handleStaff(player, "joined the server") end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if isStaff(player) then handleStaff(player, "left the server") end
+    clearCharCaches(player.Character)
+    _friendCache[player] = nil
+    _friendCacheTime[player] = nil
+    local pname = player.Name
+    for key in pairs(enemyAmmoCache) do
+        if key:sub(1, #pname + 1) == pname .. "_" then enemyAmmoCache[key] = nil end
+    end
+    for key in pairs(prefireCooldown) do
+        if key:sub(1, #pname + 1) == pname .. "_" then prefireCooldown[key] = nil end
+    end
+end)
+
+local vim = game:GetService("VirtualInputManager")
+local lastBuy = 0
+local cache = {}
+
+local _itemNameMap = {}
+for cat, list in pairs(ALL_ITEMS) do
+    for _, name in ipairs(list) do _itemNameMap[name] = cat end
+end
+
+local cacheByModel = {}
+
+local function tryCacheModel(inst)
+    if not inst:IsA("Model") then return end
+    if cacheByModel[inst] then return end
+    local cat = _itemNameMap[inst.Name]
+    if not cat then return end
+    local part
+    for _, desc in ipairs(inst:GetChildren()) do
+        if desc:IsA("BasePart") then part = desc; break end
+    end
+    if not part then return end
+    local entry = { model = inst, part = part, cat = cat, name = inst.Name }
+    cacheByModel[inst] = entry
+    cache[#cache + 1] = entry
+end
+
+local function onAutoBuyDescendantAdded(inst)
+    if inst:IsA("Model") then tryCacheModel(inst)
+    elseif inst:IsA("BasePart") then
+        local parent = inst.Parent
+        if parent and parent:IsA("Model") then tryCacheModel(parent) end
+    end
+end
+
+local function onAutoBuyDescendantRemoving(inst)
+    local entry = cacheByModel[inst]
+    if not entry then return end
+    cacheByModel[inst] = nil
+    for i = #cache, 1, -1 do
+        if cache[i] == entry then
+            table.remove(cache, i)
+            break
+        end
+    end
+end
+
+task.spawn(function()
+    local stack = { workspace }
+    local processed = 0
+    while #stack > 0 do
+        local inst = table.remove(stack)
+        tryCacheModel(inst)
+        for _, child in ipairs(inst:GetChildren()) do stack[#stack + 1] = child end
+        processed = processed + 1
+        if processed % 200 == 0 then task.wait(0.05) end
+    end
+end)
+
+local _autoBuyShopFolder =
+    (workspace:FindFirstChild("Ignored") and workspace.Ignored:FindFirstChild("Shop"))
+    or (workspace:FindFirstChild("MAP") and workspace.MAP:FindFirstChild("Ignored") and workspace.MAP.Ignored:FindFirstChild("Shop"))
+    or workspace
+
+if _autoBuyShopFolder ~= workspace then
+    _autoBuyShopFolder.DescendantAdded:Connect(onAutoBuyDescendantAdded)
+    _autoBuyShopFolder.DescendantRemoving:Connect(onAutoBuyDescendantRemoving)
+else
+    workspace.DescendantAdded:Connect(function(inst)
+        if not getFlag("AutoBuy", true) then return end
+        onAutoBuyDescendantAdded(inst)
+    end)
+    workspace.DescendantRemoving:Connect(function(inst)
+        if not getFlag("AutoBuy", true) then return end
+        onAutoBuyDescendantRemoving(inst)
+    end)
+end
+
+local function tryBuy(model)
+    local cd = model:FindFirstChildWhichIsA("ClickDetector", true)
+    if cd then
+        if fireclickdetector then
+            pcall(fireclickdetector, cd)
+            return true
+        else
+            local p
+            for _, desc in ipairs(model:GetDescendants()) do if desc:IsA("BasePart") then p = desc; break end end
+            if p then
+                local pos, on = Camera:WorldToScreenPoint(p.Position)
+                if on then
+                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+                    task.wait(0.05)
+                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+                    return true
+                end
+            end
+        end
+    end
+    local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
+    if prompt and prompt.Enabled then
+        prompt:Prompt()
+        return true
+    end
+    return false
+end
+
+local function hasItem(name)
+    local ch = LocalPlayer.Character
+    local bp = LocalPlayer.Backpack
+    for _, c in pairs((ch and ch:GetChildren()) or {}) do if c:IsA("Tool") and c.Name == name then return true end end
+    for _, c in pairs((bp and bp:GetChildren()) or {}) do if c:IsA("Tool") and c.Name == name then return true end end
+    return false
+end
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        pcall(function()
+            if not getFlag("AutoBuy", true) then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            local pos = hrp.Position
+            if tick() - lastBuy < (tonumber(getFlag("BuyCooldown", 0)) or 0) then return end
+            local prox = tonumber(getFlag("BuyProximity", 20)) or 20
+            local selectedGuns = getFlag("SelectedGun", {})
+            local selectedFoods = getFlag("AutoBuyFoodList", {})
+            if type(selectedGuns) == "string" then selectedGuns = {selectedGuns} end
+            if type(selectedFoods) == "string" then selectedFoods = {selectedFoods} end
+            local bought = false
+            for _, entry in ipairs(cache) do
+                local shouldBuy = false
+                if entry.cat == "Gun" and getFlag("AutoBuyGun", true) then
+                    if #selectedGuns > 0 then
+                        for _, g in ipairs(selectedGuns) do
+                            if g == entry.name then shouldBuy = true; break end
+                        end
+                    else shouldBuy = true end
+                elseif entry.cat == "Food" and getFlag("AutoBuyFood", true) then
+                    if #selectedFoods > 0 then
+                        for _, f in ipairs(selectedFoods) do
+                            if f == entry.name then shouldBuy = true; break end
+                        end
+                    else shouldBuy = true end
+                elseif entry.cat == "Armor" and getFlag("AutoBuyArmor", true) then
+                    shouldBuy = true
+                end
+                if shouldBuy and not hasItem(entry.name) then
+                    local d = (entry.part.Position - pos).Magnitude
+                    if d < prox then
+                        if tryBuy(entry.model) then bought = true end
+                    end
+                end
+            end
+            if bought then lastBuy = tick() end
+        end)
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    autoShootStep()
+end)
+
+RunService.RenderStepped:Connect(function(dt)
+    local camCF = Camera.CFrame
+    aimbotStep(camCF, camCF.Position, camCF.LookVector, dt)
+end)
+end)()
